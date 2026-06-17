@@ -7,34 +7,39 @@ on:
       - feature/github_actions
 
 jobs:
-  build:
+  build-release:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: true
-      - run: sudo apt-get update && sudo apt-get install libboost-test-dev -y
-      - run: cmake . -DPATCH_VERSION=${{ github.run_number }} -DWITH_BOOST_TEST=ON
-      - run: cmake --build .
-      - run: cmake --build . --target test
-      - run: cmake --build . --target package
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.run_number }}
-          release_name: Release ${{ github.run_number }}
-          draft: false
-          prerelease: false
-      - name: Upload Release Asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./helloworld-0.0.${{ github.run_number }}-Linux.deb
-          asset_name: helloworld-0.0.${{ github.run_number }}-Linux.deb
-          asset_content_type: application/vnd.debian.binary-package
+      # 1. Получаем код из репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем системные зависимости (ускоряем за счет кэширования apt)
+      - name: Install system dependencies and compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential ffmpeg libopencv-dev clang-15 lld-15
+
+      # 3. Настраиваем проект с помощью CMake
+      - name: Configure CMake with Clang-15 and C++20
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          mkdir -p build && cd build
+          CC=clang-15 CXX=clang++-15 cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-15 \
+            -DCMAKE_CXX_COMPILER=clang++-15 \
+            -DCMAKE_CXX_STANDARD=20
+
+      # 4. Собираем проект
+      - name: Build project
+        working-directory: ${{ github.workspace }}/build
+        run: make -j$(nproc)
+
+      # 5. Запускаем исполняемый файл (если он успешно собрался)
+      - name: Run the application
+        if: success() # Этот шаг выполнится, только если предыдущий ('Build') прошел без ошибок
+        working-directory: ${{ github.workspace }}/build
+        run: ./YourProjectName
