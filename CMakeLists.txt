@@ -1,86 +1,61 @@
-cmake_minimum_required(VERSION 3.12)
+# --- 1. Основные настройки проекта ---
+cmake_minimum_required(VERSION 3.20)
+project(Eagle LANGUAGES CXX) # Замените 'Eagle' на имя вашей цели/проекта
 
-set(PATCH_VERSION "1" CACHE INTERNAL "Patch version")
-set(PROJECT_VESRION 0.0.${PATCH_VERSION})
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-project(helloworld VERSION ${PROJECT_VESRION})
+# Принудительно указываем компилятор clang++ (если это нужно для локальной сборки)
+# На GitHub Actions мы передаем их через командную строку
+# set(CMAKE_CXX_COMPILER "clang++")
+# set(CMAKE_C_COMPILER "clang")
 
-option(WITH_BOOST_TEST "Whether to build Boost test" ON)
+# Режим Release по умолчанию
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+message("Building in ${CMAKE_BUILD_TYPE} mode...")
 
-configure_file(version.h.in version.h)
+# --- 2. Поиск зависимостей: OpenCV и FFmpeg ---
 
-add_executable(helloworld_cli main.cpp)
-add_library(helloworld lib.cpp)
+# Находим OpenCV
+find_package(OpenCV REQUIRED)
 
-set_target_properties(helloworld_cli helloworld PROPERTIES
-    CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON
+# Находим компоненты FFmpeg через pkg-config
+find_package(PkgConfig QUIET)
+pkg_check_modules(AV_CODEC REQUIRED libavcodec)
+pkg_check_modules(AV_FORMAT REQUIRED libavformat)
+pkg_check_modules(AV_UTIL REQUIRED libavutil)
+pkg_check_modules(SWSCALE REQUIRED libswscale)
+
+# --- 3. Сборка исходных файлов ---
+file(GLOB_RECURSE SOURCES src/*.cpp)
+file(GLOB_RECURSE HEADERS include/*.hpp include/*.h)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+
+# --- 4. Подключение библиотек к цели ---
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include> # Для будущего использования
+        # Пути для OpenCV
+        ${OpenCV_INCLUDE_DIRS}
+        # Пути для FFmpeg
+        ${AV_CODEC_INCLUDE_DIRS}
+        ${AV_FORMAT_INCLUDE_DIRS}
+        ${AV_UTIL_INCLUDE_DIRS}
+        ${SWSCALE_INCLUDE_DIRS}
 )
 
-target_include_directories(helloworld
-    PRIVATE "${CMAKE_BINARY_DIR}"
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        # Библиотеки OpenCV
+        ${OpenCV_LIBS}
+        # Библиотеки FFmpeg
+        ${AV_CODEC_LIBRARIES}
+        ${AV_FORMAT_LIBRARIES}
+        ${AV_UTIL_LIBRARIES}
+        ${SWSCALE_LIBRARIES}
 )
-
-target_link_libraries(helloworld_cli PRIVATE
-    helloworld
-)
-
-if(WITH_BOOST_TEST)
-    find_package(Boost COMPONENTS unit_test_framework REQUIRED)
-    add_executable(test_version test_version.cpp)
-
-    set_target_properties(test_version PROPERTIES
-        CXX_STANDARD 14
-        CXX_STANDARD_REQUIRED ON
-    )
-
-    set_target_properties(test_version PROPERTIES
-        COMPILE_DEFINITIONS BOOST_TEST_DYN_LINK
-        INCLUDE_DIRECTORIES ${Boost_INCLUDE_DIR}
-    )
-
-    target_link_libraries(test_version
-        ${Boost_LIBRARIES}
-        helloworld
-    )
-endif()
-
-if (MSVC)
-    target_compile_options(helloworld_cli PRIVATE
-        /W4
-    )
-    target_compile_options(helloworld PRIVATE
-        /W4
-    )
-    if(WITH_BOOST_TEST)
-        target_compile_options(test_version PRIVATE
-            /W4
-        )
-    endif()
-else ()
-    target_compile_options(helloworld_cli PRIVATE
-        -Wall -Wextra -pedantic -Werror
-    )
-    target_compile_options(helloworld PRIVATE
-        -Wall -Wextra -pedantic -Werror
-    )
-    if(WITH_BOOST_TEST)
-        target_compile_options(test_version PRIVATE
-            -Wall -Wextra -pedantic -Werror
-        )
-    endif()
-endif()
-
-install(TARGETS helloworld_cli RUNTIME DESTINATION bin)
-
-set(CPACK_GENERATOR DEB)
-set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
-set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
-set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
-set(CPACK_PACKAGE_CONTACT example@example.com)
-include(CPack)
-
-if(WITH_BOOST_TEST)
-    enable_testing()
-    add_test(test_version test_version)
-endif()
